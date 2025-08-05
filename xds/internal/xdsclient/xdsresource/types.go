@@ -6,7 +6,7 @@ import (
 	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	"google.golang.org/grpc/internal/xds/bootstrap"
-	genericxdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient" // Assuming this package exists for ServerConfig
+	genericxdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
 )
 
 const (

@@ -2,11 +2,9 @@ package xdsclient
 
 import (
 	"google.golang.org/grpc/internal/xds/bootstrap"
-	// Alias the generic internal xdsclient package to avoid name collision
-	// with the top-level xdsclient package that this file belongs to.
+
 	genericxdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
-	// Alias the xdsresource package to prevent any potential name resolution conflicts.
-	// This makes it explicitly clear where 'Type' comes from.
+
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 	xdsrc "google.org/grpc/xds/internal/xdsclient/xdsresource"
 )

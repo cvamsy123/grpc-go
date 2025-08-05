@@ -89,7 +89,7 @@ func newClientImpl(config *bootstrap.Config) *clientImpl {
 		watchers:         make(map[xdsresource.Type]map[string]*watcherInfo),
 		lastResources:    make(map[xdsresource.Type]map[string]interface{}),
 	}
-	// Initialize the supportedResources map from the definitions in resource_types.go
+
 	c.supportedResources = supportedResourceTypes(config, nil) // gServerCfgMap can be nil for now or passed from outer context
 	return c
 }
@@ -220,7 +220,7 @@ func (c *clientImpl) watch(rType xdsresource.Type, resourceName string, updateHa
 	}
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
-	// Use the aliased ResourceUpdate type for the channel.
+
 	updateCh := make(chan genericxdsclient.ResourceUpdate, 1)
 	info := &watcherInfo{updateCh: updateCh, cancel: cancelFunc}
 
@@ -252,10 +252,10 @@ func (c *clientImpl) watch(rType xdsresource.Type, resourceName string, updateHa
 			case update := <-updateCh:
 				timer.Reset(defaultWatchExpiryTimeout)
 				if update.Err != nil {
-					// Use resourceName from the outer scope, as the update might not have it
+
 					updateHandler(nil, update.Err)
 				} else {
-					// The ResourceUpdate's Resources map should be updated correctly by handleResourceUpdate
+
 					if res, ok := update.Resources[resourceName]; ok {
 						updateHandler(res, nil)
 					}
@@ -304,7 +304,7 @@ func (c *clientImpl) handleResourceUpdate(update genericxdsclient.ResourceUpdate
 				Resources: map[string]interface{}{
 					name: resource,
 				},
-				Err: nil, // Clear the error since we are dispatching a valid resource.
+				Err: nil,
 			}
 		}
 	}
