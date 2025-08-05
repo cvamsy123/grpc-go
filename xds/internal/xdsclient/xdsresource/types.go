@@ -15,7 +15,6 @@ const (
 	RouteConfigTypeName       = "RouteConfiguration"
 	ClusterResourceTypeName   = "Cluster"
 	EndpointsResourceTypeName = "ClusterLoadAssignment"
-	// Other resource types as needed (e.g., Secret, ScopedRouteConfiguration)
 )
 
 // Decoder is the interface that resource type implementations must satisfy to
@@ -28,46 +27,32 @@ type Decoder interface {
 // and decoder.
 type Type struct {
 	TypeURL                    string
-	TypeName                   string // User-friendly name for logging/metrics
-	AllResourcesRequiredInSotW bool   // Set to true if this type requires all resources to be present in a single response
+	TypeName                   string
+	AllResourcesRequiredInSotW bool
 	Decoder                    Decoder
 }
 
 // Listener represents the unwrapped Listener resource configuration.
 type Listener struct {
-	// Add relevant fields from the Envoy Listener proto here
-	// For example:
 	*v3listenerpb.Listener
-	// Additional processed fields, e.g., filter chains, connection limits.
 }
 
 // RouteConfig represents the unwrapped RouteConfiguration resource.
 type RouteConfig struct {
-	// Add relevant fields from the Envoy RouteConfiguration proto here
-	// For example:
 	*v3routepb.RouteConfiguration
-	// Additional processed fields, e.g., virtual hosts, error handling.
 }
 
 // Cluster represents the unwrapped Cluster resource.
 type Cluster struct {
-	// Add relevant fields from the Envoy Cluster proto here
-	// For example:
 	*v3clusterpb.Cluster
-	// Additional processed fields, e.g., load balancing policy, health checks.
 }
 
 // Endpoints represents the unwrapped ClusterLoadAssignment (Endpoints) resource.
 type Endpoints struct {
-	// Add relevant fields from the Envoy ClusterLoadAssignment proto here
-	// For example:
 	*v3endpointpb.ClusterLoadAssignment
-	// Additional processed fields, eg., addresses, health statuses.
 }
 
-// Below are placeholder decoder implementations. In a real scenario, these
-// would contain the full logic for deserializing and validating the xDS proto
-// messages into the unwrapped Go structs defined above.
+// placeholder decoder implementations.
 
 type listenerDecoder struct {
 	config *bootstrap.Config
@@ -78,11 +63,10 @@ func NewGenericListenerResourceTypeDecoder(config *bootstrap.Config) Decoder {
 }
 
 func (d *listenerDecoder) Decode(resp interface{}) (map[string]interface{}, error) {
-	// Placeholder: In a real implementation, you would decode resp into
-	// v3listenerpb.Listener and then convert to xdsresource.Listener
+
 	return map[string]interface{}{
 		"default_listener": &Listener{Listener: &v3listenerpb.Listener{Name: "default_listener"}},
-	}, nil // Placeholder for actual decoding logic
+	}, nil
 }
 
 type routeConfigDecoder struct{}
@@ -92,11 +76,10 @@ func NewGenericRouteConfigResourceTypeDecoder() Decoder {
 }
 
 func (d *routeConfigDecoder) Decode(resp interface{}) (map[string]interface{}, error) {
-	// Placeholder: In a real implementation, you would decode resp into
-	// v3routepb.RouteConfiguration and then convert to xdsresource.RouteConfig
+
 	return map[string]interface{}{
 		"default_route": &RouteConfig{RouteConfiguration: &v3routepb.RouteConfiguration{Name: "default_route"}},
-	}, nil // Placeholder for actual decoding logic
+	}, nil
 }
 
 type clusterDecoder struct {
@@ -109,11 +92,10 @@ func NewGenericClusterResourceTypeDecoder(config *bootstrap.Config, gServerCfgMa
 }
 
 func (d *clusterDecoder) Decode(resp interface{}) (map[string]interface{}, error) {
-	// Placeholder: In a real implementation, you would decode resp into
-	// v3clusterpb.Cluster and then convert to xdsresource.Cluster
+
 	return map[string]interface{}{
 		"default_cluster": &Cluster{Cluster: &v3clusterpb.Cluster{Name: "default_cluster"}},
-	}, nil // Placeholder for actual decoding logic
+	}, nil
 }
 
 type endpointsDecoder struct{}
@@ -125,11 +107,10 @@ func NewGenericEndpointsResourceTypeDecoder() Decoder {
 func (d *endpointsDecoder) Decode(resp interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"default_endpoints": &Endpoints{ClusterLoadAssignment: &v3endpointpb.ClusterLoadAssignment{ClusterName: "default_endpoints"}},
-	}, nil // Placeholder for actual decoding logic
+	}, nil
 }
 
 // ResourceWatcher is a generic interface for watching xDS resources.
-// This is used by the lower-level generic client.
 type ResourceWatcher interface {
 	OnUpdate(update map[string]interface{})
 	OnError(err error)

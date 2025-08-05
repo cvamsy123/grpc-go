@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/xds/bootstrap"
 
-	// Alias this package to distinguish it from the top-level xdsclient package.
 	// This is where ResourceUpdate is now defined.
 	genericxdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
 
@@ -310,7 +309,7 @@ func (c *clientImpl) handleResourceUpdate(update genericxdsclient.ResourceUpdate
 		}
 	}
 
-	// Also handle the case of errors for specific resources.
+	// handling the errors
 	// The generic client might send an update with a nil Resources map and an error.
 	if update.Err != nil {
 		for _, wi := range watchMap {
