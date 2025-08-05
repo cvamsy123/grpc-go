@@ -1,54 +1,47 @@
-/*
- *
- * Copyright 2025 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package xdsclient
 
 import (
 	"google.golang.org/grpc/internal/xds/bootstrap"
-	"google.golang.org/grpc/xds/internal/clients/xdsclient"
-	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
+	// Alias the generic internal xdsclient package to avoid name collision
+	// with the top-level xdsclient package that this file belongs to.
+	genericxdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
+	// Alias the xdsresource package to prevent any potential name resolution conflicts.
+	// This makes it explicitly clear where 'Type' comes from.
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
+	xdsrc "google.org/grpc/xds/internal/xdsclient/xdsresource"
 )
 
-func supportedResourceTypes(config *bootstrap.Config, gServerCfgMap map[xdsclient.ServerConfig]*bootstrap.ServerConfig) map[string]xdsclient.ResourceType {
-	return map[string]xdsclient.ResourceType{
-		version.V3ListenerURL: {
+// supportedResourceTypes returns a map of all supported xDS resource types
+// for the client. The key is the resource's TypeURL.
+//
+// This function is now updated to return the generic `xdsrc.Type` struct,
+// directly populating it with the appropriate decoders. This removes the old
+// wrapper-based `xdsclient.ResourceType` definitions.
+func supportedResourceTypes(config *bootstrap.Config, gServerCfgMap map[genericxdsclient.ServerConfig]*bootstrap.ServerConfig) map[string]xdsrc.Type {
+	return map[string]xdsrc.Type{
+		version.V3ListenerURL: xdsrc.Type{ // Explicitly qualify with xdsrc.Type
 			TypeURL:                    version.V3ListenerURL,
-			TypeName:                   xdsresource.ListenerResourceTypeName,
+			TypeName:                   xdsrc.ListenerResourceTypeName,
 			AllResourcesRequiredInSotW: true,
-			Decoder:                    xdsresource.NewGenericListenerResourceTypeDecoder(config),
+			Decoder:                    xdsrc.NewGenericListenerResourceTypeDecoder(config),
 		},
-		version.V3RouteConfigURL: {
+		version.V3RouteConfigURL: xdsrc.Type{ // Explicitly qualify
 			TypeURL:                    version.V3RouteConfigURL,
-			TypeName:                   xdsresource.RouteConfigTypeName,
+			TypeName:                   xdsrc.RouteConfigTypeName,
 			AllResourcesRequiredInSotW: false,
-			Decoder:                    xdsresource.NewGenericRouteConfigResourceTypeDecoder(),
+			Decoder:                    xdsrc.NewGenericRouteConfigResourceTypeDecoder(),
 		},
-		version.V3ClusterURL: {
+		version.V3ClusterURL: xdsrc.Type{ // Explicitly qualify
 			TypeURL:                    version.V3ClusterURL,
-			TypeName:                   xdsresource.ClusterResourceTypeName,
+			TypeName:                   xdsrc.ClusterResourceTypeName,
 			AllResourcesRequiredInSotW: true,
-			Decoder:                    xdsresource.NewGenericClusterResourceTypeDecoder(config, gServerCfgMap),
+			Decoder:                    xdsrc.NewGenericClusterResourceTypeDecoder(config, gServerCfgMap),
 		},
-		version.V3EndpointsURL: {
+		version.V3EndpointsURL: xdsrc.Type{ // Explicitly qualify
 			TypeURL:                    version.V3EndpointsURL,
-			TypeName:                   xdsresource.EndpointsResourceTypeName,
+			TypeName:                   xdsrc.EndpointsResourceTypeName,
 			AllResourcesRequiredInSotW: false,
-			Decoder:                    xdsresource.NewGenericEndpointsResourceTypeDecoder(),
+			Decoder:                    xdsrc.NewGenericEndpointsResourceTypeDecoder(),
 		},
 	}
 }

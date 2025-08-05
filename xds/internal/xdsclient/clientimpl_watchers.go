@@ -26,6 +26,11 @@ import (
 // are are deserialized and validated, as received from the xDS management
 // server. Upon receipt of a response from the management server, an
 // appropriate callback on the watcher is invoked.
-func (c *clientImpl) WatchResource(rType xdsresource.Type, resourceName string, watcher xdsresource.ResourceWatcher) (cancel func()) {
-	return c.XDSClient.WatchResource(rType.TypeURL(), resourceName, xdsresource.GenericResourceWatcher(watcher))
+func (c *clientImpl) WatchResource(resourceTypeURL string, resourceName string, watcher xdsresource.ResourceWatcher) (cancel func()) {
+	// Directly call the underlying XDSClient's WatchResource method with the
+	// generic resourceTypeURL and the provided watcher.
+	// This removes the explicit wrapper (xdsresource.GenericResourceWatcher)
+	// and uses a direct string for the resource type, conforming to
+	// generic client interface principles.
+	return c.XDSClient.WatchResource(resourceTypeURL, resourceName, watcher)
 }

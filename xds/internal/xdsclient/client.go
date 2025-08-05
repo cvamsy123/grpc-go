@@ -29,6 +29,26 @@ import (
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
 )
 
+type ListenerWatcher interface {
+	OnUpdate(resourceName string, listener *xdsresource.Listener)
+	OnError(resourceName string, err error)
+}
+
+type RouteConfigWatcher interface {
+	OnUpdate(resourceName string, routeConfig *xdsresource.RouteConfig)
+	OnError(resourceName string, err error)
+}
+
+type ClusterWatcher interface {
+	OnUpdate(resourceName string, cluster *xdsresource.Cluster)
+	OnError(resourceName string, err error)
+}
+
+type EndpointsWatcher interface {
+	OnUpdate(resourceName string, endpoints *xdsresource.Endpoints)
+	OnError(resourceName string, err error)
+}
+
 // XDSClient is a full fledged gRPC client which queries a set of discovery APIs
 // (collectively termed as xDS) on a remote management server, to discover
 // various dynamic resources.
@@ -47,11 +67,25 @@ type XDSClient interface {
 	// During a race (e.g. an xDS response is received while the user is calling
 	// cancel()), there's a small window where the callback can be called after
 	// the watcher is canceled. Callers need to handle this case.
-	WatchResource(rType xdsresource.Type, resourceName string, watcher xdsresource.ResourceWatcher) (cancel func())
+	WatchListener(resourceName string, watcher ListenerWatcher) (cancel func())
 
+	// WatchRouteConfig uses xDS to discover the RouteConfiguration resource.
+	WatchRouteConfig(resourceName string, watcher RouteConfigWatcher) (cancel func())
+
+	// WatchCluster uses xDS to discover the Cluster resource.
+	WatchCluster(resourceName string, watcher ClusterWatcher) (cancel func())
+
+	// WatchEndpoints uses xDS to discover the ClusterLoadAssignment (Endpoints) resource.
+	WatchEndpoints(resourceName string, watcher EndpointsWatcher) (cancel func())
+
+	// ReportLoad is used to report load to the xDS management server.
 	ReportLoad(*bootstrap.ServerConfig) (*lrsclient.LoadStore, func(context.Context))
 
+	// BootstrapConfig returns the configuration read from the bootstrap file.
 	BootstrapConfig() *bootstrap.Config
+
+	// Close closes the xDS client, releasing all resources.
+	Close()
 }
 
 // DumpResources returns the status and contents of all xDS resources. It uses
