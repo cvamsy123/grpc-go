@@ -18,9 +18,12 @@
 package xdsresource
 
 import (
+	"fmt"
+
 	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/internal/xds/bootstrap"
 	xdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
+	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -49,11 +52,6 @@ func (clusterResourceType) Decode(opts *DecodeOptions, resource *anypb.Any) (*De
 		return nil, err
 	case err != nil:
 		// Protobuf deserialization succeeded, but resource validation failed.
-		return &DecodeResult{Name: name, Resource: &ClusterResourceData{Resource: ClusterUpdate{}}}, err
-	}
-
-	// Perform extra validation here.
-	if err := securityConfigValidator(opts.BootstrapConfig, cluster.SecurityCfg); err != nil {
 		return &DecodeResult{Name: name, Resource: &ClusterResourceData{Resource: ClusterUpdate{}}}, err
 	}
 
@@ -97,38 +95,40 @@ func (c *ClusterResourceData) Raw() *anypb.Any {
 // ClusterWatcher wraps the callbacks to be invoked for different events
 // corresponding to the cluster resource being watched. gRFC A88 contains an
 // exhaustive list of what method is invoked under what conditions.
+
 type ClusterWatcher interface {
-	// ResourceChanged indicates a new version of the resource is available.
-	ResourceChanged(resource *ClusterResourceData, done func())
-
-	// ResourceError indicates an error occurred while trying to fetch or
-	// decode the associated resource. The previous version of the resource
-	// should be considered invalid.
-	ResourceError(err error, done func())
-
-	// AmbientError indicates an error occurred after a resource has been
-	// received that should not modify the use of that resource but may provide
-	// useful information about the state of the XDSClient for debugging
-	// purposes. The previous version of the resource should still be
-	// considered valid.
-	AmbientError(err error, done func())
+	ResourceChanged(resources map[string]*Cluster)
+	ResourceError(err error)
+	AmbientError(err error)
 }
 
 type delegatingClusterWatcher struct {
 	watcher ClusterWatcher
 }
 
-func (d *delegatingClusterWatcher) ResourceChanged(data ResourceData, onDone func()) {
-	c := data.(*ClusterResourceData)
-	d.watcher.ResourceChanged(c, onDone)
+func (d *delegatingClusterWatcher) ResourceChanged(resources map[string]ResourceData) {
+	if d.watcher == nil {
+		return
+	}
+	ret := make(map[string]*Cluster, len(resources))
+	for name, res := range resources {
+		ret[name] = res.(*Cluster)
+	}
+	d.watcher.ResourceChanged(ret)
 }
 
-func (d *delegatingClusterWatcher) ResourceError(err error, onDone func()) {
-	d.watcher.ResourceError(err, onDone)
+func (d *delegatingClusterWatcher) ResourceError(err error) {
+	if d.watcher == nil {
+		return
+	}
+	d.watcher.ResourceError(err)
 }
 
-func (d *delegatingClusterWatcher) AmbientError(err error, onDone func()) {
-	d.watcher.AmbientError(err, onDone)
+func (d *delegatingClusterWatcher) AmbientError(err error) {
+	if d.watcher == nil {
+		return
+	}
+	d.watcher.AmbientError(err)
 }
 
 // WatchCluster uses xDS to discover the configuration associated with the
@@ -141,5 +141,44 @@ func WatchCluster(p Producer, name string, w ClusterWatcher) (cancel func()) {
 // NewGenericClusterResourceTypeDecoder returns a xdsclient.Decoder that
 // wraps the xdsresource.clusterType.
 func NewGenericClusterResourceTypeDecoder(bc *bootstrap.Config, gServerCfgMap map[xdsclient.ServerConfig]*bootstrap.ServerConfig) xdsclient.Decoder {
-	return &GenericResourceTypeDecoder{ResourceType: clusterType, BootstrapConfig: bc, ServerConfigMap: gServerCfgMap}
+	ct := clusterTypeImpl{
+		resourceTypeState: resourceTypeState{
+			typeURL:                    version.V3ClusterURL,
+			typeName:                   "Cluster",
+			allResourcesRequiredInSotW: false,
+		},
+		bootstrapConfig: bc,
+		serverConfigMap: gServerCfgMap,
+	}
+
+	return &GenericResourceTypeDecoder{
+		decoder: func(resource xdsclient.AnyProto, gOpts xdsclient.DecodeOptions) (*xdsclient.DecodeResult, error) {
+			anyProto := &anypb.Any{TypeUrl: resource.TypeURL, Value: resource.Value}
+			opts := &DecodeOptions{BootstrapConfig: ct.bootstrapConfig}
+
+			if gOpts.ServerConfig != nil {
+				if bootstrapSC, ok := ct.serverConfigMap[*gOpts.ServerConfig]; ok {
+					opts.ServerConfig = bootstrapSC
+				} else {
+					return nil, fmt.Errorf("xdsresource: server config %v not found in map", *gOpts.ServerConfig)
+				}
+			}
+
+			internalResult, err := ct.Decode(opts, anyProto)
+			if err != nil {
+				if internalResult != nil {
+					return &xdsclient.DecodeResult{Name: internalResult.Name}, err
+				}
+				return nil, err
+			}
+			if internalResult == nil {
+				return nil, fmt.Errorf("xdsresource: internal decode returned nil result but no error")
+			}
+			xdsClientResourceData, ok := internalResult.Resource.(xdsclient.ResourceData)
+			if !ok {
+				return nil, fmt.Errorf("xdsresource: internal resource of type %T does not implement xdsclient.ResourceData", internalResult.Resource)
+			}
+			return &xdsclient.DecodeResult{Name: internalResult.Name, Resource: xdsClientResourceData}, nil
+		},
+	}
 }

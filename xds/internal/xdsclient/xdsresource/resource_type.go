@@ -67,18 +67,9 @@ type Producer interface {
 // All methods contain a done parameter which should be called when processing
 // of the update has completed.
 type ResourceWatcher interface {
-	// ResourceChanged indicates a new version of the resource is available.
-	ResourceChanged(resourceData ResourceData, done func())
-	// ResourceError indicates an error occurred while trying to fetch or
-	// decode the associated resource. The previous version of the resource
-	// should be considered invalid.
-	ResourceError(err error, done func())
-	// AmbientError indicates an error occurred after a resource has been
-	// received that should not modify the use of that resource but may provide
-	// useful information about the state of the XDSClient for debugging
-	// purposes. The previous version of the resource should still be
-	// considered valid.
-	AmbientError(err error, done func())
+	ResourceChanged(resources map[string]ResourceData)
+	ResourceError(err error)
+	AmbientError(err error)
 }
 
 // Type wraps all resource-type specific functionality. Each supported resource
@@ -178,35 +169,10 @@ type Listener struct {
 }
 
 // RawEqual implements xdsresource.ResourceData.
-func (l *Listener) RawEqual(other ResourceData) bool {
-	o, ok := other.(*Listener)
-	if !ok {
-		return false
-	}
-	return proto.Equal(l.Listener, o.Listener)
-}
 
 // ToJSON implements xdsresource.ResourceData.
-func (l *Listener) ToJSON() string {
-	return l.Listener.String()
-}
 
 // Raw implements xdsresource.ResourceData.
-func (l *Listener) Raw() *anypb.Any {
-	any, _ := anypb.New(l.Listener)
-	return any
-}
-func (l *Listener) Bytes() []byte {
-	b, _ := proto.Marshal(l.Listener)
-	return b
-}
-func (l *Listener) Equal(other xdsclient.ResourceData) bool {
-	o, ok := other.(*Listener)
-	if !ok {
-		return false
-	}
-	return l.RawEqual(o)
-}
 
 // listenerTypeImpl implements xdsresource.Type and xdsclient.Decoder.
 type listenerTypeImpl struct {
@@ -221,17 +187,6 @@ var ListenerType = listenerTypeImpl{
 		typeName:                   "Listener",
 		allResourcesRequiredInSotW: false,
 	},
-}
-
-// TypeURL implements xdsresource.Type.
-func (lt listenerTypeImpl) TypeURL() string { return lt.resourceTypeState.TypeURL() }
-
-// TypeName implements xdsresource.Type.
-func (lt listenerTypeImpl) TypeName() string { return lt.resourceTypeState.TypeName() }
-
-// AllResourcesRequiredInSotW implements xdsresource.Type.
-func (lt listenerTypeImpl) AllResourcesRequiredInSotW() bool {
-	return lt.resourceTypeState.AllResourcesRequiredInSotW()
 }
 
 // Decode is the internal decode logic for the xdsresource package.
