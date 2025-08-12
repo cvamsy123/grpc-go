@@ -18,6 +18,10 @@
 package xdsresource
 
 import (
+	"fmt"
+
+	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	"google.golang.org/grpc/internal/xds/bootstrap"
 	xdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 	"google.golang.org/protobuf/proto"
@@ -30,82 +34,42 @@ const (
 	ListenerResourceTypeName = "ListenerResource"
 )
 
-// listenerResourceType provides the resource-type specific functionality for a
-// Listener resource.
-//
-// Implements the Type interface.
+type Listener struct {
+	*v3listenerpb.Listener
+}
 
 func (l *Listener) Bytes() []byte {
 	b, _ := proto.Marshal(l.Listener)
 	return b
 }
-func (l *Listener) RawEqual(other ResourceData) bool {
+func (l *Listener) Raw() *anypb.Any {
+	any, _ := anypb.New(l.Listener)
+	return any
+}
+
+// Equal returns true if other is equal to l.
+func (l *Listener) Equal(other xdsclient.ResourceData) bool {
 	o, ok := other.(*Listener)
 	if !ok {
 		return false
 	}
 	return proto.Equal(l.Listener, o.Listener)
 }
-func (l *Listener) Raw() *anypb.Any {
-	any, _ := anypb.New(l.Listener)
-	return any
-}
-func (l *Listener) Equal(other xdsclient.ResourceData) bool {
-	o, ok := other.(*Listener)
-	if !ok {
-		return false
-	}
-	return l.RawEqual(o)
-}
-
 func (l *Listener) ToJSON() string       { return l.Listener.String() }
 func (l *Listener) ResourceName() string { return l.GetName() }
 func (l *Listener) GetName() string      { return l.Listener.Name }
 
-// ListenerWatcher wraps a ResourceWatcher and provides a type-safe API.
-type ListenerWatcher interface {
-	ResourceChanged(resources map[string]*Listener)
-	ResourceError(err error)
-	AmbientError(err error)
+// ListenerTypeImpl provides the resource-type specific functionality for a
+// Listener resource.
+//
+// Implements the Type interface and xdsclient.Decoder.
+type ListenerTypeImpl struct {
+	resourceTypeState
+	BootstrapConfig *bootstrap.Config
+	ServerConfigMap map[xdsclient.ServerConfig]*bootstrap.ServerConfig
 }
 
-// delegatingListenerWatcher is a wrapper around a ListenerWatcher that implements
-// the xdsresource.ResourceWatcher interface, performing the necessary type conversions.
-type delegatingListenerWatcher struct {
-	watcher ListenerWatcher
-}
-
-func (d *delegatingListenerWatcher) ResourceChanged(resources map[string]ResourceData) {
-	if d.watcher == nil {
-		return
-	}
-	ret := make(map[string]*Listener, len(resources))
-	for name, res := range resources {
-		ret[name] = res.(*Listener)
-	}
-	d.watcher.ResourceChanged(ret)
-}
-
-func (d *delegatingListenerWatcher) ResourceError(err error) {
-	if d.watcher == nil {
-		return
-	}
-	d.watcher.ResourceError(err)
-}
-
-func (d *delegatingListenerWatcher) AmbientError(err error) {
-	if d.watcher == nil {
-		return
-	}
-	d.watcher.AmbientError(err)
-}
-
-func WatchListener(p Producer, name string, w ListenerWatcher) (cancel func()) {
-	delegator := &delegatingListenerWatcher{watcher: w}
-	return p.WatchResource(listenerType, name, delegator)
-}
-
-var listenerType = listenerTypeImpl{
+var listenerType = ListenerTypeImpl{
 	resourceTypeState: resourceTypeState{
 		typeURL:                    ListenerTypeURL(),
 		typeName:                   "Listener",
@@ -113,10 +77,37 @@ var listenerType = listenerTypeImpl{
 	},
 }
 
-func (lt listenerTypeImpl) TypeURL() string  { return lt.resourceTypeState.TypeURL() }
-func (lt listenerTypeImpl) TypeName() string { return lt.resourceTypeState.TypeName() }
-func (lt listenerTypeImpl) AllResourcesRequiredInSotW() bool {
+func (lt ListenerTypeImpl) TypeURL() string  { return lt.resourceTypeState.TypeURL() }
+func (lt ListenerTypeImpl) TypeName() string { return lt.resourceTypeState.TypeName() }
+func (lt ListenerTypeImpl) AllResourcesRequiredInSotW() bool {
 	return lt.resourceTypeState.AllResourcesRequiredInSotW()
+}
+
+// Decode deserializes and validates an xDS resource serialized inside the
+// provided `Any` proto, as received from the xDS management server.
+func (lt ListenerTypeImpl) Decode(resource xdsclient.AnyProto, gOpts xdsclient.DecodeOptions) (*xdsclient.DecodeResult, error) {
+	anyProto := &anypb.Any{TypeUrl: resource.TypeURL, Value: resource.Value}
+
+	opts := &DecodeOptions{BootstrapConfig: lt.BootstrapConfig}
+	if gOpts.ServerConfig != nil {
+		if bootstrapSC, ok := lt.ServerConfigMap[*gOpts.ServerConfig]; ok {
+			opts.ServerConfig = bootstrapSC
+		} else {
+			return nil, fmt.Errorf("xdsresource: server config %v not found in map", *gOpts.ServerConfig)
+		}
+	}
+
+	var listenerProto v3listenerpb.Listener
+	if err := anyProto.UnmarshalTo(&listenerProto); err != nil {
+		return nil, fmt.Errorf("xdsresource: failed to unmarshal Listener: %v", err)
+	}
+
+	xdsClientResourceData := &Listener{Listener: &listenerProto}
+
+	return &xdsclient.DecodeResult{
+		Name:     listenerProto.GetName(),
+		Resource: xdsClientResourceData,
+	}, nil
 }
 
 // ListenerTypeURL returns the type URL for Listener resources.

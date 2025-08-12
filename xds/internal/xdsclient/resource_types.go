@@ -24,31 +24,45 @@ import (
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 )
 
+// supportedResourceTypes returns a map of supported resource types, with their
+// decoders directly implemented by the resource type structs themselves.
 func supportedResourceTypes(config *bootstrap.Config, gServerCfgMap map[xdsclient.ServerConfig]*bootstrap.ServerConfig) map[string]xdsclient.ResourceType {
 	return map[string]xdsclient.ResourceType{
 		version.V3ListenerURL: {
 			TypeURL:                    version.V3ListenerURL,
 			TypeName:                   xdsresource.ListenerResourceTypeName,
 			AllResourcesRequiredInSotW: true,
-			Decoder:                    xdsresource.NewListenerDecoder(config, gServerCfgMap),
+			Decoder: &xdsresource.ListenerTypeImpl{
+				BootstrapConfig: config,
+				ServerConfigMap: gServerCfgMap,
+			},
 		},
 		version.V3RouteConfigURL: {
 			TypeURL:                    version.V3RouteConfigURL,
 			TypeName:                   xdsresource.RouteConfigTypeName,
 			AllResourcesRequiredInSotW: false,
-			Decoder:                    xdsresource.NewRouteConfigDecoder(config, gServerCfgMap),
+			Decoder: &xdsresource.RouteConfigTypeImpl{
+				BootstrapConfig: config,
+				ServerConfigMap: gServerCfgMap,
+			},
 		},
 		version.V3ClusterURL: {
 			TypeURL:                    version.V3ClusterURL,
 			TypeName:                   xdsresource.ClusterResourceTypeName,
 			AllResourcesRequiredInSotW: true,
-			Decoder:                    xdsresource.NewGenericClusterResourceTypeDecoder(config, gServerCfgMap),
+			Decoder: &xdsresource.ClusterTypeImpl{
+				BootstrapConfig: config,
+				ServerConfigMap: gServerCfgMap,
+			},
 		},
 		version.V3EndpointsURL: {
 			TypeURL:                    version.V3EndpointsURL,
 			TypeName:                   xdsresource.EndpointsResourceTypeName,
 			AllResourcesRequiredInSotW: false,
-			Decoder:                    xdsresource.NewEndpointsDecoder(config, gServerCfgMap),
+			Decoder: &xdsresource.EndpointsTypeImpl{
+				BootstrapConfig: config,
+				ServerConfigMap: gServerCfgMap,
+			},
 		},
 	}
 }

@@ -18,8 +18,14 @@
 package xdsresource
 
 import (
+	"fmt"
+
 	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	"google.golang.org/grpc/internal/xds/bootstrap"
+	xdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -28,63 +34,78 @@ const (
 	RouteConfigTypeName = "RouteConfigResource"
 )
 
-// routeConfigResourceType provides the resource-type specific functionality for
-// a RouteConfiguration resource.
-//
-// Implements the Type interface.
-type RouteConfigResource struct {
+// RouteConfig represents the internal data structure for a RouteConfig resource.
+type RouteConfig struct {
 	*v3routepb.RouteConfiguration
 }
 
+func (rc *RouteConfig) Bytes() []byte {
+	b, _ := proto.Marshal(rc.RouteConfiguration)
+	return b
+}
+func (rc *RouteConfig) Raw() *anypb.Any {
+	any, _ := anypb.New(rc.RouteConfiguration)
+	return any
+}
+func (rc *RouteConfig) Equal(other xdsclient.ResourceData) bool {
+	o, ok := other.(*RouteConfig)
+	if !ok {
+		return false
+	}
+	return proto.Equal(rc.RouteConfiguration, o.RouteConfiguration)
+}
+
+func (rc *RouteConfig) ToJSON() string       { return rc.RouteConfiguration.String() }
 func (rc *RouteConfig) ResourceName() string { return rc.GetName() }
 func (rc *RouteConfig) GetName() string      { return rc.RouteConfiguration.Name }
 
-// RouteConfigWatcher wraps a ResourceWatcher and provides a type-safe API.
-type RouteConfigWatcher interface {
-	ResourceChanged(resources map[string]*RouteConfig)
-	ResourceError(err error)
-	AmbientError(err error)
+// RouteConfigTypeImpl provides the resource-type specific functionality for a
+// RouteConfiguration resource.
+//
+// Implements the Type interface and xdsclient.Decoder.
+type RouteConfigTypeImpl struct {
+	resourceTypeState
+	BootstrapConfig *bootstrap.Config
+	ServerConfigMap map[xdsclient.ServerConfig]*bootstrap.ServerConfig
 }
 
-// delegatingRouteConfigWatcher is a wrapper around a RouteConfigWatcher that implements
-// the xdsresource.ResourceWatcher interface, performing the necessary type conversions.
-type delegatingRouteConfigWatcher struct {
-	watcher RouteConfigWatcher
+var routeConfigType = RouteConfigTypeImpl{
+	resourceTypeState: resourceTypeState{
+		typeURL:                    version.V3RouteConfigURL,
+		typeName:                   "RouteConfig",
+		allResourcesRequiredInSotW: false,
+	},
 }
 
-func (d *delegatingRouteConfigWatcher) ResourceChanged(resources map[string]ResourceData) {
-	if d.watcher == nil {
-		return
+func (rct RouteConfigTypeImpl) TypeURL() string  { return rct.resourceTypeState.TypeURL() }
+func (rct RouteConfigTypeImpl) TypeName() string { return rct.resourceTypeState.TypeName() }
+func (rct RouteConfigTypeImpl) AllResourcesRequiredInSotW() bool {
+	return rct.resourceTypeState.AllResourcesRequiredInSotW()
+}
+
+// Decode deserializes and validates an xDS resource serialized inside the
+// provided `Any` proto, as received from the xDS management server.
+func (rct RouteConfigTypeImpl) Decode(resource xdsclient.AnyProto, gOpts xdsclient.DecodeOptions) (*xdsclient.DecodeResult, error) {
+	anyProto := &anypb.Any{TypeUrl: resource.TypeURL, Value: resource.Value}
+
+	opts := &DecodeOptions{BootstrapConfig: rct.BootstrapConfig}
+	if gOpts.ServerConfig != nil {
+		if bootstrapSC, ok := rct.ServerConfigMap[*gOpts.ServerConfig]; ok {
+			opts.ServerConfig = bootstrapSC
+		} else {
+			return nil, fmt.Errorf("xdsresource: server config %v not found in map", *gOpts.ServerConfig)
+		}
 	}
-	ret := make(map[string]*RouteConfig, len(resources))
-	for name, res := range resources {
-		ret[name] = res.(*RouteConfig)
+
+	var routeConfigProto v3routepb.RouteConfiguration
+	if err := anyProto.UnmarshalTo(&routeConfigProto); err != nil {
+		return nil, fmt.Errorf("xdsresource: failed to unmarshal RouteConfig: %v", err)
 	}
-	d.watcher.ResourceChanged(ret)
-}
 
-func (d *delegatingRouteConfigWatcher) ResourceError(err error) {
-	if d.watcher == nil {
-		return
-	}
-	d.watcher.ResourceError(err)
-}
+	xdsClientResourceData := &RouteConfig{RouteConfiguration: &routeConfigProto}
 
-func (d *delegatingRouteConfigWatcher) AmbientError(err error) {
-	if d.watcher == nil {
-		return
-	}
-	d.watcher.AmbientError(err)
+	return &xdsclient.DecodeResult{
+		Name:     routeConfigProto.GetName(),
+		Resource: xdsClientResourceData,
+	}, nil
 }
-
-func WatchRouteConfig(p Producer, name string, w RouteConfigWatcher) (cancel func()) {
-	delegator := &delegatingRouteConfigWatcher{watcher: w}
-	return p.WatchResource(routeConfigType, name, delegator)
-}
-
-// RouteConfigTypeURL returns the type URL for RouteConfig resources.
-func RouteConfigTypeURL() string {
-	return version.V3RouteConfigURL
-}
-
-// NewRouteConfigDecoder returns a new Decoder for RouteConfig resources.

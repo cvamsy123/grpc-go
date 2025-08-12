@@ -76,7 +76,19 @@ var (
 		Labels:      []string{"grpc.target", "grpc.xds.server"},
 		Default:     false,
 	})
-	
+)
+
+// clientImpl is the client that communicates with the xDS server./
+type clientImpl struct {
+	*xdsclient.XDSClient
+	xdsClientConfig xdsclient.Config
+	bootstrapConfig *bootstrap.Config
+	logger          grpclog.LoggerV2
+	target          string
+	lrsClient       *lrsclient.LRSClient
+	refCount        int32
+}
+
 type metricsReporter struct {
 	recorder estats.MetricsRecorder
 	target   string
@@ -202,7 +214,3 @@ func populateGRPCTransportConfigsFromServerConfig(sc *bootstrap.ServerConfig, gr
 	}
 	return nil
 }
-
-// supportedResourceTypes defines the set of decoders that the xdsclient will use.
-// This function creates a map of decoders and passes the necessary state
-// (bootstrap config, server config map) to each of them during initialization.

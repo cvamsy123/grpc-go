@@ -24,12 +24,35 @@ import (
 	"time"
 
 	v3statuspb "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
+	"google.golang.org/grpc/backoff"
 	estats "google.golang.org/grpc/experimental/stats"
 	"google.golang.org/grpc/internal/envconfig"
-	istats "google.golang.org/grpc/internal/stats"
 	"google.golang.org/grpc/internal/xds/bootstrap"
+	v2xdsclient "google.golang.org/grpc/xds/internal/clients/xdsclient"
+	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
+	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 	"google.golang.org/protobuf/proto"
 )
+
+// XDSClient is a user facing interface for the xds client.
+type XDSClient interface {
+	Close()
+	WatchResource(rType xdsresource.Type, resourceName string, watcher xdsresource.ResourceWatcher) func()
+}
+
+// clientImpl is the concrete implementation of the xds client.
+type clientWrapper struct {
+	v2xdsclient.XDSClient
+}
+
+func (c *clientWrapper) WatchResource(rType xdsresource.Type, resourceName string, watcher xdsresource.ResourceWatcher) func() {
+	return c.XDSClient.WatchResource(rType.TypeURL(), resourceName, v2xdsclient.ResourceWatcher(watcher))
+}
+
+// Close implements the XDSClient interface.
+func (c *clientWrapper) Close() {
+	c.XDSClient.Close()
+}
 
 var (
 	// DefaultPool is the default pool for xDS clients. It is created at init
@@ -113,25 +136,11 @@ func (p *Pool) NewClient(name string, metricsRecorder estats.MetricsRecorder) (X
 // # Testing Only
 //
 // This function should ONLY be used for testing purposes.
-func (p *Pool) NewClientForTesting(opts OptionsForTesting) (XDSClient, func(), error) {
-	if opts.Name == "" {
-		return nil, nil, fmt.Errorf("xds: opts.Name field must be non-empty")
+func (p *Pool) NewClientForTesting(name string, metricsRecorder estats.MetricsRecorder) (XDSClient, func(), error) {
+	if name == "" {
+		return nil, nil, fmt.Errorf("xds: name field must be non-empty")
 	}
-	if opts.WatchExpiryTimeout == 0 {
-		opts.WatchExpiryTimeout = defaultWatchExpiryTimeout
-	}
-	if opts.StreamBackoffAfterFailure == nil {
-		opts.StreamBackoffAfterFailure = defaultExponentialBackoff
-	}
-	if opts.MetricsRecorder == nil {
-		opts.MetricsRecorder = istats.NewMetricsRecorderList(nil)
-	}
-	c, cancel, err := p.newRefCounted(opts.Name, opts.MetricsRecorder)
-	if err != nil {
-		return nil, nil, err
-	}
-	c.SetWatchExpiryTimeoutForTesting(opts.WatchExpiryTimeout)
-	return c, cancel, nil
+	return p.newRefCounted(name, metricsRecorder)
 }
 
 // GetClientForTesting returns an xDS client created earlier using the given
@@ -284,4 +293,51 @@ func (p *Pool) newRefCounted(name string, metricsRecorder estats.MetricsRecorder
 
 	logger.Infof("xDS node ID: %s", config.Node().GetId())
 	return c, sync.OnceFunc(func() { p.clientRefCountedClose(name) }), nil
+}
+func NewClientWithConfig(config *bootstrap.Config, metricsRecorder estats.MetricsRecorder) (XDSClient, error) {
+	// The client constructor now requires a ResourceTypeMap. We provide a map with the correct types.
+	resourceTypeMap := map[string]v2xdsclient.ResourceType{
+		version.V3ListenerURL: {
+			TypeURL:                    version.V3ListenerURL,
+			TypeName:                   xdsresource.ListenerResourceTypeName,
+			AllResourcesRequiredInSotW: true,
+			Decoder:                    &xdsresource.ListenerTypeImpl{BootstrapConfig: config},
+		},
+		version.V3RouteConfigURL: {
+			TypeURL:                    version.V3RouteConfigURL,
+			TypeName:                   xdsresource.RouteConfigTypeName,
+			AllResourcesRequiredInSotW: false,
+			Decoder:                    &xdsresource.RouteConfigTypeImpl{BootstrapConfig: config},
+		},
+		version.V3ClusterURL: {
+			TypeURL:                    version.V3ClusterURL,
+			TypeName:                   xdsresource.ClusterResourceTypeName,
+			AllResourcesRequiredInSotW: true,
+			Decoder:                    &xdsresource.ClusterTypeImpl{BootstrapConfig: config},
+		},
+		version.V3EndpointsURL: {
+			TypeURL:                    version.V3EndpointsURL,
+			TypeName:                   xdsresource.EndpointsResourceTypeName,
+			AllResourcesRequiredInSotW: false,
+			Decoder:                    &xdsresource.EndpointsTypeImpl{BootstrapConfig: config},
+		},
+	}
+
+	c, err := v2xdsclient.New(v2xdsclient.Options{
+		BootstrapConfig:    config,
+		MetricsRecorder:    metricsRecorder,
+		ResourceTypeMap:    resourceTypeMap,
+		Transport:          transport.New(),
+		Backoff:            backoff.Config{BaseDelay: 1 * time.Second, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 120 * time.Second},
+		WatchExpiryTimeout: 15 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &clientWrapper{c}, nil
+}
+
+type refCountedClient struct {
+	client   XDSClient
+	refCount int
 }
